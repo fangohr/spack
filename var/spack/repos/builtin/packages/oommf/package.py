@@ -61,5 +61,7 @@ class Oommf(Package):
         # Uses OOMMF's pimake system
         print(spec)
         # Is there a better way then this?
-        cp = Executable('/bin/cp -av . ' + prefix)
-        cp()
+        # cp = Executable('/bin/cp -av . ' + prefix)
+        #cp()
+        install_tree('.', prefix) 
+        
