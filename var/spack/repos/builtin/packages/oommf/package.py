@@ -20,6 +20,8 @@
 # See the Spack documentation for more information on packaging.
 # ----------------------------------------------------------------------------
 
+import os.path
+
 from spack import *
 
 
@@ -36,16 +38,19 @@ class Oommf(Package):
 
     version('20200608-hotfix', sha256='5c349de6e698b0c2c5390aa0598ea3052169438cdcc7e298068bc03abb9761c8')
 
-    # FIXME: Add dependencies if required.
-    # depends_on('foo')
     depends_on('tk')
     depends_on('tcl')
 
     phases = ['configure', 'build', 'install']
 
 
+    def set_oommf_path(self, prefix):
+        """Given the prefix, return the full path of the OOMMF installation below `prefix`."""
+        oommfdir = os.path.join(prefix.usr.bin, 'oommf')
+        return oommfdir
+    
+
     def configure(self, spec, prefix):
-        # configure = Executable('./Configure')
         configure = Executable('./oommf.tcl pimake distclean')
         configure()
         configure2 = Executable('./oommf.tcl pimake upgrade')
@@ -55,13 +60,25 @@ class Oommf(Package):
     def build(self, spec, prefix):
         make = Executable('./oommf.tcl pimake ')
         make()
+        
 
-        
     def install(self, spec, prefix):
-        # Uses OOMMF's pimake system
-        print(spec)
-        # Is there a better way then this?
-        # cp = Executable('/bin/cp -av . ' + prefix)
-        #cp()
-        install_tree('.', prefix) 
-        
+        # keep a copy of all the tcl files and everything oommf created.
+        # in OOMMF terminology, this is OOMMF_ROOT
+        # We are now using prefix/usr/bin/oommf for that location - is there a better place?
+        oommfdir = self.set_oommf_path(prefix)
+        install_tree('.', oommfdir)
+
+        # The one file that is used directly by the users should be available as the binary for the user:
+        install_files = ['oommf.tcl']
+        mkdirp(prefix.bin)
+        for f in install_files:
+            install(os.path.join(oommfdir, f), prefix.bin)
+
+
+    def setup_environment(self, spack_env, run_env):
+        """Set OOMMF_ROOT so that oommf.tcl can find its files."""
+        oommfdir = self.set_oommf_path(self.prefix)
+        run_env.set('OOMMF_ROOT', oommfdir)
+
+    # XXX TODO Add smoke test (may platform and one quick example)
