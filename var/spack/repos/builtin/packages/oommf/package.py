@@ -23,6 +23,7 @@
 import os.path
 
 from spack import *
+from spack.util.executable import Executable
 
 
 class Oommf(Package):
@@ -44,7 +45,13 @@ class Oommf(Package):
     phases = ['configure', 'build', 'install']
 
 
-    def set_oommf_path(self, prefix):
+    # sanity checks: (https://spack.readthedocs.io/en/latest/packaging_guide.html#checking-an-installation)
+    #
+    # this file must exist in the installation environment for the install to be considered a success
+    sanity_check_is_file = [join_path('bin', 'oommf.tcl')]
+    sanity_check_is_dir = ['usr/bin/oommf/app', 'usr/bin/oommf/app/oxs/eamples']
+    
+    def get_oommf_path(self, prefix):
         """Given the prefix, return the full path of the OOMMF installation below `prefix`."""
         oommfdir = os.path.join(prefix.usr.bin, 'oommf')
         return oommfdir
@@ -66,7 +73,7 @@ class Oommf(Package):
         # keep a copy of all the tcl files and everything oommf created.
         # in OOMMF terminology, this is OOMMF_ROOT
         # We are now using prefix/usr/bin/oommf for that location - is there a better place?
-        oommfdir = self.set_oommf_path(prefix)
+        oommfdir = self.get_oommf_path(prefix)
         install_tree('.', oommfdir)
 
         # The one file that is used directly by the users should be available as the binary for the user:
@@ -78,7 +85,101 @@ class Oommf(Package):
 
     def setup_environment(self, spack_env, run_env):
         """Set OOMMF_ROOT so that oommf.tcl can find its files."""
-        oommfdir = self.set_oommf_path(self.prefix)
+        oommfdir = self.get_oommf_path(self.prefix)
         run_env.set('OOMMF_ROOT', oommfdir)
 
-    # XXX TODO Add smoke test (may platform and one quick example)
+    # # XXX TODO Add smoke test (may platform and one quick example)
+    # @run_after('install')
+    # def check_version(self):
+    #     oommfdir = self.et_oommf_path(self.prefix)
+    #     # Add your custom post-build phase tests
+    #     version = Executable(join_path(self.prefix.bin, 'oommf.tcl'))
+    #     version("+version")
+        
+
+    # @run_after('build')
+    #@on_package_attributes(run_tests=True)
+    #def check_build(self):
+    #     # Add your custom post-build phase tests
+    #     pass
+        
+
+    @run_after('install')
+    def check_install(self):
+        spec = self.spec
+        test_env = {}
+
+        # Make sure the correct config is found
+        # This environment variable (OOMMF_ROOT) seems not to be
+        # set at this point, so we have to set it manually for the test:
+        oommfdir = self.get_oommf_path(self.prefix)
+        test_env["OOMMF_ROOT"] = oommfdir
+
+        print("Testing oommf.tcl +version")
+
+        oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
+
+        output = oommf("+version", output=str.split, error=str.split, env=test_env)
+        print("ouput received fromm oommf is '{}".format(output))
+
+
+
+    @run_after('install')
+    def check_install_platform(self):
+        spec = self.spec
+        test_env = {}
+        # OOMMF needs paths to execute
+        test_env['PATH'] = os.environ['PATH']
+        print("PATH=", test_env['PATH'])
+
+        # Make sure the correct config is found
+        # This environment variable (OOMMF_ROOT) seems not to be
+        # set at this point, so we have to set it manually for the test:
+        oommfdir = self.get_oommf_path(self.prefix)
+        test_env["OOMMF_ROOT"] = oommfdir
+
+        print("Testing oommf.tcl +platform")
+
+        oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
+
+        output = oommf("+platform", output=str.split, error=str.split, env=test_env)
+        print("ouput received fromm oommf is '{}".format(output))
+
+
+    @run_after('install')
+    def check_install_stdprob3(self):
+        spec = self.spec
+        test_env = {}
+
+        # Make sure the correct config is found
+        # This environment variable (OOMMF_ROOT) seems not to be
+        # set at this point, so we have to set it manually for the test:
+        oommfdir = self.get_oommf_path(self.prefix)
+        test_env["OOMMF_ROOT"] = oommfdir
+
+        print("Testing oommf.tcl standard problem 3")
+
+        oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
+        oommf_examples = join_path(spec.prefix.usr.bin, 'oommf/app/oxs/examples')
+        task = join_path(oommf_examples, 'stdprob3.mif')
+        output = oommf("boxsi", "+fg", task, "-exitondone", "1",
+                       output=str.split, error=str.split, env=test_env)
+        print("ouput received fromm oommf is '{}".format(output))
+
+
+
+    def test(self):
+        """Run tests when requested explicitely"""
+        spec = self.spec
+        exe = join_path(spec.prefix.bin, "oommf.tcl")
+        options = ["+version"]
+        purpose = "Check oommf.tcl can execute (+version)"
+        self.run_test(exe, options=[], expected=[], status=0,
+             installed=False, purpose=purpose, skip_missing=False,
+             work_dir=None)
+
+        options = ["+platform"]
+        purpose = "Check oommf.tcl can execute (+platform)"
+        self.run_test(exe, options=[], expected=[], status=0,
+             installed=False, purpose=purpose, skip_missing=False,
+             work_dir=None)
