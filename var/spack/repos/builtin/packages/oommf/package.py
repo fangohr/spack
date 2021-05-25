@@ -3,23 +3,6 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-# ----------------------------------------------------------------------------
-# If you submit this package back to Spack as a pull request,
-# please first remove this boilerplate and all FIXME comments.
-#
-# This is a template package file for Spack.  We've put "FIXME"
-# next to all the things you'll want to change. Once you've handled
-# them, you can save this file and test your package like this:
-#
-#     spack install oommf
-#
-# You can edit this file again by typing:
-#
-#     spack edit oommf
-#
-# See the Spack documentation for more information on packaging.
-# ----------------------------------------------------------------------------
-
 import os.path
 
 from spack import *
@@ -27,10 +10,24 @@ from spack.util.executable import Executable
 
 
 class Oommf(Package):
-    """FIXME: Put a proper description of your package here."""
+    """The Object Oriented MicroMagnetic Framework (OOMMF) is aimed at
+developing portable, extensible public domain programs and tools for
+micromagnetics. 
 
-    # FIXME: Add a proper url for your package's homepage here.
-    homepage = "https://www.example.com"
+The code forms a completely functional micromagnetics package, with
+the additional capability to be extended by other programmers so that
+people developing new code can build on the OOMMF foundation. OOMMF is
+written in C++, a widely-available, object-oriented language that can
+produce programs with good performance as well as extensibility. For
+portable user interfaces, we make use of Tcl/Tk so that OOMMF operates
+across a wide range of Unix, Windows, and Mac OS X platforms. The main
+contributors to OOMMF are Mike Donahue, and Don Porter.
+
+Summary taken from OOMMF documentation https://math.nist.gov/oommf/
+    """
+
+
+    homepage = "https://math.nist.gov/oommf/"
     url      = "https://math.nist.gov/oommf/dist/oommf20a2_20200608-hotfix.tar.gz"
 
     # FIXME: Add a list of GitHub accounts to
