@@ -84,6 +84,8 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
         """Set OOMMF_ROOT so that oommf.tcl can find its files."""
         oommfdir = self.get_oommf_path(self.prefix)
         run_env.set('OOMMF_ROOT', oommfdir)
+        # set OOMMFTCL so ubermag / oommf can find oommf
+        run_env.set('OOMMFTCL', join_path(oommfdir, 'oommf.tcl'))
 
     # # XXX TODO Add smoke test (may platform and one quick example)
     # @run_after('install')
