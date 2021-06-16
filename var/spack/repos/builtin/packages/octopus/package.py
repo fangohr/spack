@@ -12,8 +12,12 @@ class Octopus(Package):
     theory code."""
 
     homepage = "https://octopus-code.org/"
-    url      = "http://octopus-code.org/down.php?file=6.0/octopus-6.0.tar.gz"
+    url      = "http://octopus-code.org/down.php?file=10.4/octopus-10.4.tar.gz"
+    git      = "https://gitlab.com/octopus-code/octopus.git"
 
+    version('develop', branch='develop')
+
+    version('10.4',  sha256='4de9dc6f5815a45e43320e4abc7ef3e501e34bc327441376ea20ca1a992bdb72')
     version('10.0',  sha256='ccf62200e3f37911bfff6d127ebe74220996e9c09383a10b1420c81d931dcf23')
     version('7.3',   sha256='ad843d49d4beeed63e8b9a2ca6bfb2f4c5a421f13a4f66dc7b02f6d6a5c4d742')
     version('6.0',   sha256='4a802ee86c1e06846aa7fa317bd2216c6170871632c9e03d020d7970a08a8198')
@@ -29,6 +33,29 @@ class Octopus(Package):
             description='Compile with Netcdf')
     variant('arpack', default=False,
             description='Compile with ARPACK')
+    variant('cgal', default=False,
+            description='Compile with CGAL library support')
+    variant('pfft', default=False,
+            description='Compile with PFFT')
+    variant('poke', default=False,
+            description='Compile with poke')
+    variant('likwid', default=False,
+            description='Compile with likwid')
+    variant('libvdwxc', default=False,
+            description='Compile with libvdwxc')
+    variant('libyaml', default=False,
+            description='Compile with libyaml')
+    variant('elpa', default=False,
+            description='Compile with ELPA')
+    variant('nlopt', default=False,
+            description='Compile with nlopt')
+    variant('cuda', default=False,
+            description='Compile with Cuda support')
+
+    depends_on('autoconf', type='build')
+    depends_on('automake', type='build')
+    depends_on('libtool',  type='build')
+    depends_on('m4',       type='build')
 
     depends_on('blas')
     depends_on('gsl@1.9:')
@@ -36,7 +63,9 @@ class Octopus(Package):
     depends_on('libxc@2:2.99', when='@:5.99')
     depends_on('libxc@2:3.99', when='@6:7.99')
     depends_on('libxc@2:4.99', when='@8:9.99')
-    depends_on('libxc@3:5.0.0', when='@10.0')
+    depends_on('libxc@5.1.0:', when='@10.0')
+    depends_on('libxc@5.1.0:', when='@10.4')
+    depends_on('libxc@5.1.0:', when='@develop')
     depends_on('mpi')
     depends_on('fftw@3:+mpi+openmp', when='@:9.99')
     depends_on('fftw-api@3:', when='@10.0:')
@@ -45,6 +74,15 @@ class Octopus(Package):
     depends_on('scalapack', when='+scalapack')
     depends_on('netcdf-fortran', when='+netcdf')
     depends_on('arpack-ng', when='+arpack')
+    depends_on('cgal', when='+cgal')
+    depends_on('pfft', when='+pfft')
+    depends_on('poke', when='+poke')
+    depends_on('likwid', when='+likwid')
+    depends_on('libvdwxc', when='+libvdwxc')
+    depends_on('libyaml', when='+libyaml')
+    depends_on('elpa', when='+elpa')
+    depends_on('nlopt', when='+nlopt')
+    depends_on('cuda', when='+cuda')
 
     # optional dependencies:
     # TODO: etsf-io, sparskit,
@@ -112,6 +150,51 @@ class Octopus(Package):
                 '--with-scalapack=%s' % spec['scalapack'].libs
             ])
 
+        if '+cgal' in spec:
+            args.extend([
+                '--with-cgal-prefix=%s' % spec['cgal'].prefix,
+            ])
+
+        if '+likwid' in spec:
+            args.extend([
+                '--with-likwid-prefix=%s' % spec['likwid'].prefix,
+            ])
+
+        if '+pfft' in spec:
+            args.extend([
+                '--with-pfft-prefix=%s' % spec['pfft'].prefix,
+            ])
+
+        if '+poke' in spec:
+            args.extend([
+                '--with-poke-prefix=%s' % spec['poke'].prefix,
+            ])
+
+        if '+libvdwxc' in spec:
+            args.extend([
+                '--with-libvdwxc-prefix=%s' % spec['libvdwxc'].prefix,
+            ])
+
+        if '+libyaml' in spec:
+            args.extend([
+                '--with-libyaml-prefix=%s' % spec['libyaml'].prefix,
+            ])
+
+        if '+elpa' in spec:
+            args.extend([
+                '--with-elpa-prefix=%s' % spec['elpa'].prefix,
+            ])
+
+        if '+nlopt' in spec:
+            args.extend([
+                '--with-nlopt-prefix=%s' % spec['nlopt'].prefix,
+            ])
+
+        if '+cuda' in spec:
+            args.extend([
+                '--with-cuda-prefix=%s' % spec['cuda'].prefix,
+            ])
+
             # --with-etsf-io-prefix=
             # --with-sparskit=${prefix}/lib/libskit.a
             # --with-pfft-prefix=${prefix} --with-mpifftw-prefix=${prefix}
@@ -131,6 +214,7 @@ class Octopus(Package):
                 'FCFLAGS=-O2 -ffree-line-length-none'
             ])
 
+        autoreconf('-i')
         configure(*args)
         make()
         # short tests take forever...
