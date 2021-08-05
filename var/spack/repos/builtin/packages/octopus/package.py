@@ -51,6 +51,8 @@ class Octopus(Package):
             description='Compile with nlopt')
     variant('cuda', default=False,
             description='Compile with Cuda support')
+    variant('debug', default=False,
+            description='Compile with debug flags')
 
     depends_on('autoconf', type='build')
     depends_on('automake', type='build')
@@ -210,9 +212,17 @@ class Octopus(Package):
         if (spec.satisfies('%apple-clang') or
                 spec.satisfies('%clang') or
                 spec.satisfies('%gcc')):
-            args.extend([
-                'FCFLAGS=-O2 -ffree-line-length-none'
-            ])
+            # In case of GCC version 10, we will have errors because of argument mismatching.
+            # Need to provide a flag to turn this into a warning and build sucessfully
+            if (spec.satisfies('%gcc@10.1.0:')):
+                args.extend([
+                    'FCFLAGS=-O3 -ffree-line-length-none -fallow-argument-mismatch -fallow-invalid-boz',
+                    'FFLAGS=-O3 -ffree-line-length-none -fallow-argument-mismatch -fallow-invalid-boz'])
+            else:
+                args.extend([
+                    'FCFLAGS=-O3 -ffree-line-length-none'
+                    'FFLAGS=-O3 -ffree-line-length-none'
+                ])
 
         autoreconf('-i')
         configure(*args)
