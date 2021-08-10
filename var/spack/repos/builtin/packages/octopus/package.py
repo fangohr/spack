@@ -224,8 +224,12 @@ class Octopus(Package, CudaPackage):
             # In case of GCC version 10, we will have errors because of argument mismatching.
             # Need to provide a flag to turn this into a warning and build sucessfully
             if (spec.satisfies('%gcc@10:')):
-                fcflags.extend(['-O2', '-ffree-line-length-none', '-fallow-argument-mismatch', '-fallow-invalid-boz'])
-                fflags.extend(['-O2', '-ffree-line-length-none', '-fallow-argument-mismatch', '-fallow-invalid-boz'])
+                fcflags.extend(['-O2', '-ffree-line-length-none',
+                                '-fallow-argument-mismatch',
+                                '-fallow-invalid-boz'])
+                fflags.extend(['-O2', '-ffree-line-length-none',
+                               '-fallow-argument-mismatch',
+                               '-fallow-invalid-boz'])
             else:
                 fcflags.extend(['-O2', '-ffree-line-length-none'])
                 fflags.extend(['-O2', '-ffree-line-length-none'])
