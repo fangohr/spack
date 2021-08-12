@@ -16,6 +16,11 @@ class Octopus(Package, CudaPackage):
     url      = "http://octopus-code.org/down.php?file=6.0/octopus-6.0.tar.gz"
 
     version('10.5',  sha256='deb92e3491b0c6ac5736960d075b44cab466f528b69715ed44968ecfe2953ec4')
+    version('10.4',  sha256='4de9dc6f5815a45e43320e4abc7ef3e501e34bc327441376ea20ca1a992bdb72')
+    version('10.3',  sha256='4633490e21593b51b60a8391b8aa0ed17fa52a3a0030630de123b67a41f88b33')
+    version('10.2',  sha256='393e2ba7b18af1b736ad6deb339ba0cef18c6417671da7a6f1fcc3a5d8f7586b')
+    version('10.1',  sha256='b6a660a99ed593c1d491e2d11cfff9ce87f0d80d527d9ff47fd983533d45adc6')
+
     version('10.0',  sha256='ccf62200e3f37911bfff6d127ebe74220996e9c09383a10b1420c81d931dcf23')
     version('7.3',   sha256='ad843d49d4beeed63e8b9a2ca6bfb2f4c5a421f13a4f66dc7b02f6d6a5c4d742')
     version('6.0',   sha256='4a802ee86c1e06846aa7fa317bd2216c6170871632c9e03d020d7970a08a8198')
@@ -31,6 +36,29 @@ class Octopus(Package, CudaPackage):
             description='Compile with Netcdf')
     variant('arpack', default=False,
             description='Compile with ARPACK')
+    variant('cgal', default=False,
+            description='Compile with CGAL library support')
+    variant('pfft', default=False,
+            description='Compile with PFFT')
+    variant('poke', default=False,
+            description='Compile with poke')
+    variant('likwid', default=False,
+            description='Compile with likwid')
+    variant('libvdwxc', default=False,
+            description='Compile with libvdwxc')
+    variant('libyaml', default=False,
+            description='Compile with libyaml')
+    variant('elpa', default=False,
+            description='Compile with ELPA')
+    variant('nlopt', default=False,
+            description='Compile with nlopt')
+    variant('debug', default=False,
+            description='Compile with debug flags')
+
+    depends_on('autoconf', type='build')
+    depends_on('automake', type='build')
+    depends_on('libtool',  type='build')
+    depends_on('m4',       type='build')
 
     depends_on('blas')
     depends_on('gsl@1.9:')
@@ -47,6 +75,14 @@ class Octopus(Package, CudaPackage):
     depends_on('scalapack', when='+scalapack')
     depends_on('netcdf-fortran', when='+netcdf')
     depends_on('arpack-ng', when='+arpack')
+    depends_on('cgal', when='+cgal')
+    depends_on('pfft', when='+pfft')
+    depends_on('poke', when='+poke')
+    depends_on('likwid', when='+likwid')
+    depends_on('libvdwxc', when='+libvdwxc')
+    depends_on('libyaml', when='+libyaml')
+    depends_on('elpa', when='+elpa')
+    depends_on('nlopt', when='+nlopt')
 
     # optional dependencies:
     # TODO: etsf-io, sparskit,
@@ -56,6 +92,9 @@ class Octopus(Package, CudaPackage):
         lapack = spec['lapack'].libs
         blas = spec['blas'].libs
         args = []
+        fflags = []
+        fcflags = []
+
         args.extend([
             '--prefix=%s' % prefix,
             '--with-blas=%s' % blas.ld_flags,
@@ -114,10 +153,58 @@ class Octopus(Package, CudaPackage):
                 '--with-scalapack=%s' % spec['scalapack'].libs
             ])
 
+        if '+cgal' in spec:
+            args.extend([
+                '--with-cgal-prefix=%s' % spec['cgal'].prefix,
+            ])
+
+        if '+likwid' in spec:
+            args.extend([
+                '--with-likwid-prefix=%s' % spec['likwid'].prefix,
+            ])
+
+        if '+pfft' in spec:
+            args.extend([
+                '--with-pfft-prefix=%s' % spec['pfft'].prefix,
+            ])
+
+        if '+poke' in spec:
+            args.extend([
+                '--with-poke-prefix=%s' % spec['poke'].prefix,
+            ])
+
+        if '+libvdwxc' in spec:
+            args.extend([
+                '--with-libvdwxc-prefix=%s' % spec['libvdwxc'].prefix,
+            ])
+
+        if '+libyaml' in spec:
+            args.extend([
+                '--with-libyaml-prefix=%s' % spec['libyaml'].prefix,
+            ])
+
+        if '+elpa' in spec:
+            args.extend([
+                '--with-elpa-prefix=%s' % spec['elpa'].prefix,
+            ])
+
+        if '+nlopt' in spec:
+            args.extend([
+                '--with-nlopt-prefix=%s' % spec['nlopt'].prefix,
+            ])
+
         if '+cuda' in spec:
             args.extend([
                 '--enable-cuda'
             ])
+
+        if '+openmp' in spec:
+            if spec.satisfies('%gcc'):
+                fflags.append('-fopenmp')
+                fcflags.append('-fopenmp')
+            if spec.satisfies('%intel'):
+                fflags.append('-qopenmp')
+                fcflags.append('-qopenmp')
 
         # --with-etsf-io-prefix=
         # --with-sparskit=${prefix}/lib/libskit.a
@@ -134,10 +221,23 @@ class Octopus(Package, CudaPackage):
         if (spec.satisfies('%apple-clang') or
                 spec.satisfies('%clang') or
                 spec.satisfies('%gcc')):
-            args.extend([
-                'FCFLAGS=-O2 -ffree-line-length-none'
-            ])
+            # In case of GCC version 10, we will have errors because of argument mismatching.
+            # Need to provide a flag to turn this into a warning and build sucessfully
+            if (spec.satisfies('%gcc@10:')):
+                fcflags.extend(['-O2', '-ffree-line-length-none',
+                                '-fallow-argument-mismatch',
+                                '-fallow-invalid-boz'])
+                fflags.extend(['-O2', '-ffree-line-length-none',
+                               '-fallow-argument-mismatch',
+                               '-fallow-invalid-boz'])
+            else:
+                fcflags.extend(['-O2', '-ffree-line-length-none'])
+                fflags.extend(['-O2', '-ffree-line-length-none'])
 
+        args.append('FCFLAGS=' + ' '.join(fcflags))
+        args.append('FFLAGS=' + ' '.join(fflags))
+
+        autoreconf('-i')
         configure(*args)
         make()
         # short tests take forever...
