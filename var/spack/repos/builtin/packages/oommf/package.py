@@ -147,38 +147,55 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
 
     @run_after('install')
     def check_install_stdprob3(self):
+        self.test()
+
+
+    def test(self):
+        """Run these smoke tests when requested explicitly"""
+
+        ## run "oommf +version"
+
         spec = self.spec
+        exe = join_path(spec.prefix.bin, "oommf.tcl")
+        options = ["+version"]
+        purpose = "Check oommf.tcl can execute (+version)"
+        expected = ["oommf.tcl"]
+
+        self.run_test(exe, options=options, expected=expected, status=[0],
+             installed=False, purpose=purpose, skip_missing=False,
+             work_dir=None)
+
+        ## run "oommf +platform"
+
+        options = ["+platform"]
+        purpose = "Check oommf.tcl can execute (+platform)"
+        expected = ["OOMMF threads", "NUMA support", "OOMMF API index",
+                    "Temp file directory"]
+        self.run_test(exe, options=options, expected=expected, status=[0],
+             installed=False, purpose=purpose, skip_missing=False,
+             work_dir=None)
+
+        ## run standard problem 3 with oommf (about 30 seconds runtime)
+
+        purpose = "Testing oommf.tcl standard problem 3"
+        print(purpose)
         test_env = {}
 
-        # Make sure the correct config is found
         # This environment variable (OOMMF_ROOT) seems not to be
         # set at this point, so we have to set it manually for the test:
         oommfdir = self.get_oommf_path(self.prefix)
         test_env["OOMMF_ROOT"] = oommfdir
 
-        print("Testing oommf.tcl standard problem 3")
-
         oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
         oommf_examples = join_path(spec.prefix.usr.bin, 'oommf/app/oxs/examples')
         task = join_path(oommf_examples, 'stdprob3.mif')
-        output = oommf("boxsi", "+fg", task, "-exitondone", "1",
-                       output=str.split, error=str.split, env=test_env)
-        print("ouput received fromm oommf is '{}".format(output))
 
+        options = ["boxsi", "+fg", task, "-exitondone", "1"]
 
-
-    def test(self):
-        """Run tests when requested explicitely"""
-        spec = self.spec
-        exe = join_path(spec.prefix.bin, "oommf.tcl")
-        options = ["+version"]
-        purpose = "Check oommf.tcl can execute (+version)"
-        self.run_test(exe, options=[], expected=[], status=0,
+        expected = ['End "stdprob3.mif"',
+                    "Mesh geometry: 32 x 32 x 32 = 32 768 cells",
+                    "impossible"]
+        self.run_test(exe, options=options, expected=expected, status=[0],
              installed=False, purpose=purpose, skip_missing=False,
              work_dir=None)
 
-        options = ["+platform"]
-        purpose = "Check oommf.tcl can execute (+platform)"
-        self.run_test(exe, options=[], expected=[], status=0,
-             installed=False, purpose=purpose, skip_missing=False,
-             work_dir=None)
