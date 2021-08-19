@@ -193,8 +193,7 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
         options = ["boxsi", "+fg", task, "-exitondone", "1"]
 
         expected = ['End "stdprob3.mif"',
-                    "Mesh geometry: 32 x 32 x 32 = 32 768 cells",
-                    "impossible"]
+                    "Mesh geometry: 32 x 32 x 32 = 32 768 cells"]
         self.run_test(exe, options=options, expected=expected, status=[0],
              installed=False, purpose=purpose, skip_missing=False,
              work_dir=None)
