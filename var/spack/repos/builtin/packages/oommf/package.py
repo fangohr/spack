@@ -32,15 +32,14 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
 
     # FIXME: Add a list of GitHub accounts to
     # notify when the package is updated.
-    # maintainers = ['github_user1', 'github_user2']
+    maintainers = ['fangohr']
 
     version('20200608-hotfix', sha256='5c349de6e698b0c2c5390aa0598ea3052169438cdcc7e298068bc03abb9761c8')
 
-    depends_on('tk')
-    depends_on('tcl')
+    depends_on('tk', type=("build", "run"))
+    depends_on('tcl', type=("build", "run"))
 
     phases = ['configure', 'build', 'install']
-
 
     # sanity checks: (https://spack.readthedocs.io/en/latest/packaging_guide.html#checking-an-installation)
     #
@@ -48,6 +47,7 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
     sanity_check_is_file = [join_path('bin', 'oommf.tcl')]
     sanity_check_is_dir = ['usr/bin/oommf/app', 'usr/bin/oommf/app/oxs/eamples']
     
+
     def get_oommf_path(self, prefix):
         """Given the prefix, return the full path of the OOMMF installation below `prefix`."""
         oommfdir = os.path.join(prefix.usr.bin, 'oommf')
@@ -87,24 +87,9 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
         # set OOMMFTCL so ubermag / oommf can find oommf
         run_env.set('OOMMFTCL', join_path(oommfdir, 'oommf.tcl'))
 
-    # # XXX TODO Add smoke test (may platform and one quick example)
-    # @run_after('install')
-    # def check_version(self):
-    #     oommfdir = self.et_oommf_path(self.prefix)
-    #     # Add your custom post-build phase tests
-    #     version = Executable(join_path(self.prefix.bin, 'oommf.tcl'))
-    #     version("+version")
-        
-
-    # @run_after('build')
-    #@on_package_attributes(run_tests=True)
-    #def check_build(self):
-    #     # Add your custom post-build phase tests
-    #     pass
-        
 
     @run_after('install')
-    def check_install(self):
+    def check_install_version(self):
         spec = self.spec
         test_env = {}
 
@@ -120,7 +105,6 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
 
         output = oommf("+version", output=str.split, error=str.split, env=test_env)
         print("ouput received fromm oommf is '{}".format(output))
-
 
 
     @run_after('install')
@@ -144,15 +128,61 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
         output = oommf("+platform", output=str.split, error=str.split, env=test_env)
         print("ouput received fromm oommf is '{}".format(output))
 
+    ## This doesn't work (yet?):
+##    @run_after('install')
+##    def check_install_standard_problem3(self):
+## 
+##         spec = self.spec
+##         test_env = {}
+##         # OOMMF needs paths to execute
+##         test_env['PATH'] = os.environ['PATH']
+##         print("PATH=", test_env['PATH'])
+## 
+##         # Make sure the correct config is found
+##         # This environment variable (OOMMF_ROOT) seems not to be
+##         # set at this point, so we have to set it manually for the test:
+##         oommfdir = self.get_oommf_path(self.prefix)
+##         test_env["OOMMF_ROOT"] = oommfdir
+##         
+##         purpose = "Testing standard problem 3"
+##         print(purpose)
+## 
+##         oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
+## 
+##         oommf_examples = join_path(spec.prefix.usr.bin, 'oommf/app/oxs/examples')
+##         task = join_path(oommf_examples, 'stdprob3.mif')
+##         options = ["boxsi", "+fg", task, "-exitondone", "1"]
+##         output = oommf(["boxsi", "+fg", task, "-exitondone", "1"], output=str.split, error=str.split, env=test_env)
+##         # output = oommf(f"boxsi +fg {task} -exitondone 1", output=str.split, error=str.split, env=test_env)
+##         print("ouput received fromm oommf is '{}".format(output))
+## 
+##         # expected = ['End "stdprob3.mif"',
+##         #             "Mesh geometry: 32 x 32 x 32 = 32 768 cells"]
+##         # 
+##         # exe = join_path(spec.prefix.bin, "oommf.tcl")
+##         # self.run_test(exe, options=options, expected=expected, status=[0],
+##         #      installed=False, purpose=purpose, skip_missing=False,
+##         #               work_dir=None)
 
-    @run_after('install')
-    def check_install_stdprob3(self):
-        self.test()
+
+
+    # this would be nice to avoid redundant code, but the environment settings
+    # are not right when self.test() is run at teh end of the installation step:
+    #@run_after('install')
+    #def check_install_stdprob3(self):
+    #    self.test()
 
 
     def test(self):
         """Run these smoke tests when requested explicitly"""
 
+        test_env = {}
+
+        # This environment variable (OOMMF_ROOT) seems not to be
+        # set at this point, so we have to set it manually for the test:
+        oommfdir = self.get_oommf_path(self.prefix)
+        test_env["OOMMF_ROOT"] = oommfdir
+        
         ## run "oommf +version"
 
         spec = self.spec
@@ -179,12 +209,6 @@ Summary taken from OOMMF documentation https://math.nist.gov/oommf/
 
         purpose = "Testing oommf.tcl standard problem 3"
         print(purpose)
-        test_env = {}
-
-        # This environment variable (OOMMF_ROOT) seems not to be
-        # set at this point, so we have to set it manually for the test:
-        oommfdir = self.get_oommf_path(self.prefix)
-        test_env["OOMMF_ROOT"] = oommfdir
 
         oommf = Executable(join_path(spec.prefix.bin, "oommf.tcl"))
         oommf_examples = join_path(spec.prefix.usr.bin, 'oommf/app/oxs/examples')
