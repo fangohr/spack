@@ -3,15 +3,15 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-from spack import *
-
-import socket
-import os
 import glob
+import os
 import shutil
+import socket
+from os import environ as env
 
 import llnl.util.tty as tty
-from os import environ as env
+
+from spack import *
 
 
 def cmake_cache_entry(name, value, vtype=None):
@@ -42,6 +42,7 @@ class Conduit(CMakePackage):
     # is to bridge any spack dependencies that are still using the name master
     version('master', branch='develop', submodules=True)
     # note: 2021-05-05 latest tagged release is now preferred instead of develop
+    version('0.7.2', sha256='359fd176297700cdaed2c63e3b72d236ff3feec21a655c7c8292033d21d5228a')
     version('0.7.1', sha256='460a480cf08fedbf5b38f707f94f20828798327adadb077f80dbab048fd0a07d')
     version('0.7.0', sha256='ecaa9668ebec5d4efad19b104d654a587c0adbd5f502128f89601408cb4d7d0c')
     version('0.6.0', sha256='078f086a13b67a97e4ab6fe1063f2fef2356df297e45b43bb43d74635f80475d')
@@ -74,6 +75,7 @@ class Conduit(CMakePackage):
             description="Build Conduit with HDF5 1.8.x (compatibility mode)")
     variant("silo", default=False, description="Build Conduit Silo support")
     variant("adios", default=False, description="Build Conduit ADIOS support")
+    variant("parmetis", default=False, description="Build Conduit Parmetis support")
 
     # zfp compression
     variant("zfp", default=False, description="Build Conduit ZFP support")
@@ -142,6 +144,12 @@ class Conduit(CMakePackage):
 
     # hdf5 zfp plugin when both hdf5 and zfp are on
     depends_on("h5z-zfp~fortran", when="+hdf5+zfp")
+
+    #######################
+    # Parmetis
+    #######################
+    depends_on("parmetis", when="+parmetis")
+    depends_on("metis", when="+parmetis")
 
     #######################
     # MPI
@@ -542,6 +550,21 @@ class Conduit(CMakePackage):
         else:
             cfg.write("# adios not built by spack \n")
 
+        #######################
+        # Parmetis
+        #######################
+
+        cfg.write("# parmetis from spack \n")
+
+        if "+parmetis" in spec:
+            cfg.write(cmake_cache_entry("METIS_DIR", spec['metis'].prefix))
+            cfg.write(cmake_cache_entry("PARMETIS_DIR", spec['parmetis'].prefix))
+        else:
+            cfg.write("# parmetis not built by spack \n")
+
+        #######################
+        # Finish host-config
+        #######################
         cfg.write("##################################\n")
         cfg.write("# end spack generated host-config\n")
         cfg.write("##################################\n")

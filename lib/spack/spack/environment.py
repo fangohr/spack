@@ -3,14 +3,14 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import collections
+import copy
 import os
 import re
-import sys
 import shutil
-import copy
-import six
-import ruamel.yaml as yaml
+import sys
 
+import ruamel.yaml as yaml
+import six
 from ordereddict_backport import OrderedDict
 
 import llnl.util.filesystem as fs
@@ -18,26 +18,27 @@ import llnl.util.tty as tty
 from llnl.util.tty.color import colorize
 
 import spack.concretize
+import spack.config
 import spack.error
 import spack.hash_types as ht
+import spack.hooks
 import spack.repo
 import spack.schema.env
 import spack.spec
-import spack.store
 import spack.stage
-import spack.util.spack_json as sjson
-import spack.util.spack_yaml as syaml
-import spack.config
+import spack.store
 import spack.user_environment as uenv
-from spack.filesystem_view import YamlFilesystemView
 import spack.util.environment
-from spack.spec import Spec
-from spack.spec_list import SpecList, InvalidSpecConstraintError
-from spack.variant import UnknownVariantError
 import spack.util.hash
 import spack.util.lock as lk
-from spack.util.path import substitute_path_variables
 import spack.util.path
+import spack.util.spack_json as sjson
+import spack.util.spack_yaml as syaml
+from spack.filesystem_view import YamlFilesystemView
+from spack.spec import Spec
+from spack.spec_list import InvalidSpecConstraintError, SpecList
+from spack.util.path import substitute_path_variables
+from spack.variant import UnknownVariantError
 
 #: environment variable used to indicate the active environment
 spack_env_var = 'SPACK_ENV'
@@ -115,11 +116,12 @@ def activate(
         use_env_repo (bool): use the packages exactly as they appear in the
             environment's repository
         add_view (bool): generate commands to add view to path variables
-        shell (string): One of `sh`, `csh`, `fish`.
-        prompt (string): string to add to the users prompt, or None
+        shell (str): One of `sh`, `csh`, `fish`.
+        prompt (str): string to add to the users prompt, or None
 
     Returns:
-        cmds: Shell commands to activate environment.
+        str: Shell commands to activate environment.
+
     TODO: environment to use the activated spack environment.
     """
     global _active_environment
@@ -197,10 +199,10 @@ def deactivate(shell='sh'):
     """Undo any configuration or repo settings modified by ``activate()``.
 
     Arguments:
-        shell (string): One of `sh`, `csh`, `fish`. Shell style to use.
+        shell (str): One of `sh`, `csh`, `fish`. Shell style to use.
 
     Returns:
-        (string): shell commands for `shell` to undo environment variables
+        str: shell commands for `shell` to undo environment variables
 
     """
     global _active_environment
@@ -271,7 +273,7 @@ def find_environment(args):
     If an environment is found, read it in.  If not, return None.
 
     Arguments:
-        args (Namespace): argparse namespace wtih command arguments
+        args (argparse.Namespace): argparse namespace wtih command arguments
 
     Returns:
         (Environment): a found environment, or ``None``
@@ -321,7 +323,7 @@ def get_env(args, cmd_name, required=False):
     message that says the calling command *needs* an active environment.
 
     Arguments:
-        args (Namespace): argparse namespace wtih command arguments
+        args (argparse.Namespace): argparse namespace wtih command arguments
         cmd_name (str): name of calling command
         required (bool): if ``True``, raise an exception when no environment
             is found; if ``False``, just return ``None``
@@ -459,11 +461,14 @@ class ViewDescriptor(object):
         self.root = spack.util.path.canonicalize_path(root)
         self.projections = projections
         self.select = select
-        self.select_fn = lambda x: any(x.satisfies(s) for s in self.select)
         self.exclude = exclude
-        self.exclude_fn = lambda x: not any(x.satisfies(e)
-                                            for e in self.exclude)
         self.link = link
+
+    def select_fn(self, spec):
+        return any(spec.satisfies(s) for s in self.select)
+
+    def exclude_fn(self, spec):
+        return not any(spec.satisfies(e) for e in self.exclude)
 
     def __eq__(self, other):
         return all([self.root == other.root,
@@ -500,7 +505,7 @@ class ViewDescriptor(object):
 
     @property
     def _current_root(self):
-        if not os.path.exists(self.root):
+        if not os.path.islink(self.root):
             return None
 
         root = os.readlink(self.root)
@@ -546,7 +551,7 @@ class ViewDescriptor(object):
         Raise if new is None and there is no current view
 
         Arguments:
-            new (string or None): If a string, create a FilesystemView
+            new (str or None): If a string, create a FilesystemView
                 rooted at that path. Default None. This should only be used to
                 regenerate the view, and cannot be used to access specs.
         """
@@ -745,7 +750,7 @@ class Environment(object):
         if not os.path.exists(self.manifest_path):
             return
 
-        self.clear()
+        self.clear(re_read=True)
         self._read()
 
     def _read(self):
@@ -843,15 +848,26 @@ class Environment(object):
             )
         }
 
-    def clear(self):
+    def clear(self, re_read=False):
+        """Clear the contents of the environment
+
+        Arguments:
+            re_read (bool): If True, do not clear ``new_specs`` nor
+                ``new_installs`` values. These values cannot be read from
+                yaml, and need to be maintained when re-reading an existing
+                environment.
+        """
         self.spec_lists = {user_speclist_name: SpecList()}  # specs from yaml
         self.dev_specs = {}               # dev-build specs from yaml
         self.concretized_user_specs = []  # user specs from last concretize
         self.concretized_order = []       # roots of last concretize, in order
         self.specs_by_hash = {}           # concretized specs by hash
-        self.new_specs = []               # write packages for these on write()
         self._repo = None                 # RepoPath for this env (memoized)
         self._previous_active = None      # previously active environment
+        if not re_read:
+            # things that cannot be recreated from file
+            self.new_specs = []               # write packages for these on write()
+            self.new_installs = []            # write modules for these on write()
 
     @property
     def internal(self):
@@ -1104,11 +1120,11 @@ class Environment(object):
         """Add dev-build info for package
 
         Args:
-            spec (Spec): Set constraints on development specs. Must include a
+            spec (spack.spec.Spec): Set constraints on development specs. Must include a
                 concrete version.
-            path (string): Path to find code for developer builds. Relative
+            path (str): Path to find code for developer builds. Relative
                 paths will be resolved relative to the environment.
-            clone (bool, default False): Clone the package code to the path.
+            clone (bool): Clone the package code to the path.
                 If clone is False Spack will assume the code is already present
                 at ``path``.
 
@@ -1163,6 +1179,10 @@ class Environment(object):
             del self.dev_specs[spec.name]
             return True
         return False
+
+    def is_develop(self, spec):
+        """Returns true when the spec is built from local sources"""
+        return spec.name in self.dev_specs
 
     def concretize(self, force=False, tests=False):
         """Concretize user_specs in this environment.
@@ -1537,7 +1557,7 @@ class Environment(object):
         that needs to be done separately with a call to write().
 
         Args:
-            args (Namespace): argparse namespace with command arguments
+            args (argparse.Namespace): argparse namespace with command arguments
             install_args (dict): keyword install arguments
         """
         self.install_specs(None, args=args, **install_args)
@@ -1558,6 +1578,13 @@ class Environment(object):
         specs_to_install = specs or uninstalled_roots
         specs_to_install = [s for s in specs_to_install
                             if s not in self.roots() or s in uninstalled_roots]
+
+        # ensure specs already installed are marked explicit
+        all_specs = specs or [cs for _, cs in self.concretized_specs()]
+        specs_installed = [s for s in all_specs if s.package.installed]
+        with spack.store.db.write_transaction():  # do all in one transaction
+            for spec in specs_installed:
+                spack.store.db.update_explicit(spec, True)
 
         if not specs_to_install:
             tty.msg('All of the packages are already installed')
@@ -1588,6 +1615,7 @@ class Environment(object):
             # Ensure links are set appropriately
             for spec in specs_to_install:
                 if spec.package.installed:
+                    self.new_installs.append(spec)
                     try:
                         self._install_log_links(spec)
                     except OSError as e:
@@ -1816,17 +1844,16 @@ class Environment(object):
             self.concretized_order = [
                 old_hash_to_new.get(h, h) for h in self.concretized_order]
 
-    def write(self, regenerate_views=True):
+    def write(self, regenerate=True):
         """Writes an in-memory environment to its location on disk.
 
         Write out package files for each newly concretized spec.  Also
-        regenerate any views associated with the environment, if
-        regenerate_views is True.
+        regenerate any views associated with the environment and run post-write
+        hooks, if regenerate is True.
 
         Arguments:
-            regenerate_views (bool): regenerate views as well as
-                writing if True.
-
+            regenerate (bool): regenerate views and run post-write hooks as
+                well as writing if True.
         """
         # Intercept environment not using the latest schema format and prevent
         # them from being modified
@@ -1862,7 +1889,6 @@ class Environment(object):
 
                     fs.mkdirp(pkg_dir)
                     spack.repo.path.dump_provenance(dep, pkg_dir)
-            self.new_specs = []
 
             # write the lock file last
             with fs.write_tmp_and_move(self.lock_path) as f:
@@ -1878,8 +1904,15 @@ class Environment(object):
         # call.  But, having it here makes the views consistent witht the
         # concretized environment for most operations.  Which is the
         # special case?
-        if regenerate_views:
+        if regenerate:
             self.regenerate_views()
+
+            # Run post_env_hooks
+            spack.hooks.post_env_write(self)
+
+        # new specs and new installs reset at write time
+        self.new_specs = []
+        self.new_installs = []
 
     def _update_and_write_manifest(self, raw_yaml_dict, yaml_dict):
         """Update YAML manifest for this environment based on changes to

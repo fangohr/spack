@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 import sys
+
 from spack import *
 
 
@@ -42,6 +43,8 @@ class Cgns(CMakePackage):
     variant('legacy',     default=False, description='Enable legacy options')
     variant('mem_debug',  default=False, description='Enable memory debugging option')
 
+    depends_on('cmake@3.8:', when='@4.2:', type='build')
+    depends_on('cmake@2.8:', when='@:4.1.99', type='build')
     depends_on('hdf5~mpi', when='+hdf5~mpi')
     depends_on('hdf5+mpi', when='+hdf5+mpi')
     depends_on('mpi', when='+mpi')
@@ -51,26 +54,17 @@ class Cgns(CMakePackage):
         options = []
 
         options.extend([
-            '-DCGNS_ENABLE_FORTRAN:BOOL=%s' % (
-                'ON' if '+fortran' in spec else 'OFF'),
-            '-DCGNS_ENABLE_SCOPING:BOOL=%s' % (
-                'ON' if '+scoping' in spec else 'OFF'),
-            '-DCGNS_ENABLE_PARALLEL:BOOL=%s' % (
-                'ON' if '+mpi' in spec else 'OFF'),
+            self.define_from_variant('CGNS_ENABLE_FORTRAN', 'fortran'),
+            self.define_from_variant('CGNS_ENABLE_SCOPING', 'scoping'),
+            self.define_from_variant('CGNS_ENABLE_PARALLEL', 'mpi'),
             '-DCGNS_ENABLE_TESTS:BOOL=OFF',
-            '-DCGNS_BUILD_TESTING:BOOL=%s' % (
-                'ON' if '+testing' in spec else 'OFF'),
+            self.define_from_variant('CGNS_BUILD_TESTING', 'testing'),
             '-DCGNS_BUILD_CGNSTOOLS:BOOL=OFF',
-            '-DCGNS_BUILD_SHARED:BOOL=%s' % (
-                'ON' if '+shared' in spec else 'OFF'),
-            '-DCGNS_BUILD_STATIC:BOOL=%s' % (
-                'ON' if '+static' in spec else 'OFF'),
-            '-DCGNS_ENABLE_BASE_SCOPE:BOOL=%s' % (
-                'ON' if '+base_scope' in spec else 'OFF'),
-            '-DCGNS_ENABLE_LEGACY:BOOL=%s' % (
-                'ON' if '+legacy' in spec else 'OFF'),
-            '-DCGNS_ENABLE_MEM_DEBUG:BOOL=%s' % (
-                'ON' if '+mem_debug' in spec else 'OFF')
+            self.define_from_variant('CGNS_BUILD_SHARED', 'shared'),
+            self.define_from_variant('CGNS_BUILD_STATIC', 'static'),
+            self.define_from_variant('CGNS_ENABLE_BASE_SCOPE', 'base_scope'),
+            self.define_from_variant('CGNS_ENABLE_LEGACY', 'legacy'),
+            self.define_from_variant('CGNS_ENABLE_MEM_DEBUG', 'mem_debug')
         ])
 
         if '+mpi' in spec:
@@ -81,8 +75,7 @@ class Cgns(CMakePackage):
             ])
 
         options.append(
-            '-DCGNS_ENABLE_64BIT:BOOL={0}'.format(
-                'ON' if '+int64' in spec else 'OFF'))
+            self.define_from_variant('CGNS_ENABLE_64BIT', 'int64'))
 
         if '+hdf5' in spec:
             options.extend([
