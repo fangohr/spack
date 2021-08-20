@@ -23,7 +23,6 @@ import spack.report
 from spack.error import SpackError
 from spack.installer import PackageInstaller
 
-
 description = "build and install packages"
 section = "build"
 level = "short"
@@ -190,7 +189,7 @@ def default_log_file(spec):
     """
     fmt = 'test-{x.name}-{x.version}-{hash}.xml'
     basename = fmt.format(x=spec, hash=spec.dag_hash())
-    dirname = fs.os.path.join(spack.paths.var_path, 'junit-report')
+    dirname = fs.os.path.join(spack.paths.reports_path, 'junit')
     fs.mkdirp(dirname)
     return fs.os.path.join(dirname, basename)
 
@@ -199,13 +198,13 @@ def install_specs(cli_args, kwargs, specs):
     """Do the actual installation.
 
     Args:
-        cli_args (Namespace): argparse namespace with command arguments
+        cli_args (argparse.Namespace): argparse namespace with command arguments
         kwargs (dict):  keyword arguments
-        specs (list of tuples):  list of (abstract, concrete) spec tuples
+        specs (list):  list of (abstract, concrete) spec tuples
     """
 
     # handle active environment, if any
-    env = ev.get_env(cli_args, 'install')
+    env = ev.active_environment()
 
     try:
         if env:
@@ -261,7 +260,7 @@ def install_specs(cli_args, kwargs, specs):
                     with env.write_transaction():
                         specs_to_install.append(
                             env.concretize_and_add(abstract, concrete))
-                        env.write(regenerate_views=False)
+                        env.write(regenerate=False)
 
             # Install the validated list of cli specs
             if specs_to_install:
@@ -305,6 +304,8 @@ environment variables:
             host=args.monitor_host,
             prefix=args.monitor_prefix,
             disable_auth=args.monitor_disable_auth,
+            tags=args.monitor_tags,
+            save_local=args.monitor_save_local,
         )
 
     reporter = spack.report.collect_info(
@@ -323,10 +324,14 @@ environment variables:
         else:
             return False
 
+    # Parse cli arguments and construct a dictionary
+    # that will be passed to the package installer
+    update_kwargs_from_args(args, kwargs)
+
     if not args.spec and not args.specfiles:
         # if there are no args but an active environment
         # then install the packages from it.
-        env = ev.get_env(args, 'install')
+        env = ev.active_environment()
         if env:
             tests = get_tests(env.user_specs)
             kwargs['tests'] = tests
@@ -338,23 +343,27 @@ environment variables:
 
                     # save view regeneration for later, so that we only do it
                     # once, as it can be slow.
-                    env.write(regenerate_views=False)
+                    env.write(regenerate=False)
 
             specs = env.all_specs()
             if not args.log_file and not reporter.filename:
                 reporter.filename = default_log_file(specs[0])
             reporter.specs = specs
 
+            # Tell the monitor about the specs
+            if args.use_monitor and specs:
+                monitor.new_configuration(specs)
+
             tty.msg("Installing environment {0}".format(env.name))
             with reporter('build'):
-                env.install_all(args, **kwargs)
+                env.install_all(**kwargs)
 
             tty.debug("Regenerating environment views for {0}"
                       .format(env.name))
             with env.write_transaction():
-                # It is not strictly required to synchronize view regeneration
-                # but doing so can prevent redundant work in the filesystem.
-                env.regenerate_views()
+                # write env to trigger view generation and modulefile
+                # generation
+                env.write()
             return
         else:
             msg = "install requires a package argument or active environment"
@@ -375,10 +384,6 @@ environment variables:
 
     if args.deprecated:
         spack.config.set('config:deprecated', True, scope='command_line')
-
-    # Parse cli arguments and construct a dictionary
-    # that will be passed to the package installer
-    update_kwargs_from_args(args, kwargs)
 
     # 1. Abstract specs from cli
     abstract_specs = spack.cmd.parse_specs(args.spec)

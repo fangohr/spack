@@ -6,23 +6,21 @@
 import os
 import shutil
 import sys
-from collections import namedtuple
 
-import llnl.util.tty as tty
 import llnl.util.filesystem as fs
+import llnl.util.tty as tty
 from llnl.util.tty.colify import colify
 from llnl.util.tty.color import colorize
 
-import spack.config
-import spack.schema.env
 import spack.cmd.common.arguments
-import spack.cmd.install
-import spack.cmd.uninstall
-import spack.cmd.modules
 import spack.cmd.common.arguments as arguments
+import spack.cmd.install
+import spack.cmd.modules
+import spack.cmd.uninstall
+import spack.config
 import spack.environment as ev
+import spack.schema.env
 import spack.util.string as string
-
 
 description = "manage virtual environments"
 section = "environments"
@@ -104,12 +102,11 @@ def env_activate(args):
         tty.die("No such environment: '%s'" % env)
 
     if spack_env == os.environ.get('SPACK_ENV'):
-        tty.die("Environment %s is already active" % args.activate_env)
+        tty.debug("Environment %s is already active" % args.activate_env)
+        return
 
-    active_env = ev.get_env(namedtuple('args', ['env'])(env),
-                            'activate')
     cmds = ev.activate(
-        active_env, add_view=args.with_view, shell=args.shell,
+        ev.Environment(spack_env), add_view=args.with_view, shell=args.shell,
         prompt=env_prompt if args.prompt else None
     )
     sys.stdout.write(cmds)
@@ -315,7 +312,7 @@ def env_view_setup_parser(subparser):
 
 
 def env_view(args):
-    env = ev.get_env(args, 'env view')
+    env = ev.active_environment()
 
     if env:
         if args.action == ViewAction.regenerate:
@@ -342,7 +339,7 @@ def env_status_setup_parser(subparser):
 
 
 def env_status(args):
-    env = ev.get_env(args, 'env status')
+    env = ev.active_environment()
     if env:
         if env.path == os.getcwd():
             tty.msg('Using %s in current directory: %s'
@@ -364,13 +361,16 @@ def env_loads_setup_parser(subparser):
     subparser.add_argument(
         'env', nargs='?', help='name of env to generate loads file for')
     subparser.add_argument(
+        '-n', '--module-set-name', default='default',
+        help='module set for which to generate load operations')
+    subparser.add_argument(
         '-m', '--module-type', choices=('tcl', 'lmod'),
         help='type of module system to generate loads for')
     spack.cmd.modules.add_loads_arguments(subparser)
 
 
 def env_loads(args):
-    env = ev.get_env(args, 'env loads', required=True)
+    env = spack.cmd.require_active_env(cmd_name='env loads')
 
     # Set the module types that have been selected
     module_type = args.module_type
