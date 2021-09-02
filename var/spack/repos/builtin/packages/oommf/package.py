@@ -203,7 +203,7 @@ class Oommf(Package):
         purpose = "Check oommf.tcl can execute (+platform)"
         expected = [
             "OOMMF threads",
-            "NUMA support",
+            "OOMMF release",
             "OOMMF API index",
             "Temp file directory",
         ]
