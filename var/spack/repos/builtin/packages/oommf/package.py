@@ -110,8 +110,8 @@ class Oommf(Package):
         spec = self.spec
         test_env = {}
         # OOMMF needs paths to execute
-        test_env['PATH'] = os.environ['PATH']
-        print("PATH=", test_env['PATH'])
+        test_env["PATH"] = os.environ["PATH"]
+        print("PATH=", test_env["PATH"])
 
         # Make sure the correct config is found
         # This environment variable (OOMMF_ROOT) seems not to be
@@ -132,14 +132,44 @@ class Oommf(Package):
 
         print("output received fromm oommf is '{}".format(output))
 
-    ## Didn't get this to work:
-    # @run_after('install')
-    # def check_install_stdprob3(self):
-    #     self.test()
+    @run_after("install")
+    def check_install_stdprob3(self):
+        spec = self.spec
+        test_env = {}
+        # OOMMF needs paths to execute
+        test_env["PATH"] = os.environ["PATH"]
+        print("PATH=", test_env["PATH"])
+
+        # Make sure the correct config is found
+        # This environment variable (OOMMF_ROOT) seems not to be
+        # set at this point, so we have to set it manually for the test:
+        oommfdir = self.get_oommf_path(self.prefix)
+        test_env["OOMMF_ROOT"] = oommfdir
+
+        print("Testing oommf.tcl standard problem 3")
+
+        # where is tcl?
+        tclsh = Executable(join_path(spec["tcl"].prefix.bin, "tclsh"))
+        # where is oommf.tcl?
+        oommf_tcl_path = join_path(spec.prefix.bin, "oommf.tcl")
+        # put the command together and execute
+        oommf_examples = join_path(spec.prefix.usr.bin, "oommf/app/oxs/examples")
+        task = join_path(oommf_examples, "stdprob3.mif")
+        output = tclsh(
+            oommf_tcl_path,
+            "boxsi",
+            "+fg",
+            task,
+            "-exitondone",
+            "1",
+            output=str.split,
+            error=str.split,
+            env=test_env,
+        )
+        print("output received fromm oommf is '{}".format(output))
 
     def test(self):
         """Run these smoke tests when requested explicitly"""
-
         test_env = {}
 
         # This environment variable (OOMMF_ROOT) seems not to be
