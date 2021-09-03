@@ -16,6 +16,10 @@ class Octopus(Package, CudaPackage):
     url      = "http://octopus-code.org/down.php?file=6.0/octopus-6.0.tar.gz"
     git      = "https://gitlab.com/octopus-code/octopus"
 
+    
+
+    version('11.1',  sha256='d943cc2419ca409dda7459b7622987029f2af89984d0d5f39a6b464c3fc266da')
+
     version('develop', branch='develop')
 
     version('10.5',  sha256='deb92e3491b0c6ac5736960d075b44cab466f528b69715ed44968ecfe2953ec4')
