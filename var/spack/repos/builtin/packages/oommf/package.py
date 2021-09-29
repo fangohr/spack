@@ -112,29 +112,33 @@ class Oommf(Package):
 
     def configure(self, spec, prefix):
         # change into directory with source code
-        os.chdir(self.get_oommf_source_root())
+        with working_dir(self.get_oommf_source_root()):
 
-        configure = Executable("./oommf.tcl pimake distclean")
-        configure()
-        configure2 = Executable("./oommf.tcl pimake upgrade")
-        configure2()
+            configure = Executable("./oommf.tcl pimake distclean")
+            configure()
+            configure2 = Executable("./oommf.tcl pimake upgrade")
+            configure2()
 
     def build(self, spec, prefix):
-        make = Executable("./oommf.tcl pimake ")
-        make()
+        with working_dir(self.get_oommf_source_root()):
+            make = Executable("./oommf.tcl pimake ")
+            make()
 
     def install(self, spec, prefix):
         # keep a copy of all the tcl files and everything oommf created.
         # in OOMMF terminology, this is OOMMF_ROOT
         # We are now using prefix/usr/bin/oommf for that location - is there a better place?
         oommfdir = self.get_oommf_path(prefix)
-        install_tree(".", oommfdir)
 
-        # The one file that is used directly by the users should be available as the binary for the user:
-        install_files = ["oommf.tcl"]
-        mkdirp(prefix.bin)
-        for f in install_files:
-            install(os.path.join(oommfdir, f), prefix.bin)
+        with working_dir(self.get_oommf_source_root()):
+
+            install_tree(".", oommfdir)
+
+            # The one file that is used directly by the users should be available as the binary for the user:
+            install_files = ["oommf.tcl"]
+            mkdirp(prefix.bin)
+            for f in install_files:
+                install(os.path.join(oommfdir, f), prefix.bin)
 
     def setup_environment(self, spack_env, run_env):
         """Set OOMMF_ROOT so that oommf.tcl can find its files."""
