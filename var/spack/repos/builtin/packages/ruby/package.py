@@ -11,8 +11,8 @@ class Ruby(AutotoolsPackage):
     simplicity and productivity."""
 
     homepage = "https://www.ruby-lang.org/"
-    url      = "http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.0.tar.gz"
-    list_url = "http://cache.ruby-lang.org/pub/ruby/"
+    url      = "https://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.0.tar.gz"
+    list_url = "https://cache.ruby-lang.org/pub/ruby/"
     list_depth = 1
 
     version('3.0.2', sha256='5085dee0ad9f06996a8acec7ebea4a8735e6fac22f22e2d98c3f2bc3bef7e6f1')
@@ -35,9 +35,11 @@ class Ruby(AutotoolsPackage):
     depends_on('libx11', when='@:2.3')
     depends_on('tcl', when='@:2.3')
     depends_on('tk', when='@:2.3')
-    depends_on('openssl@:1.0', when='@:2.3+openssl')
-    depends_on('openssl', when='+openssl')
     depends_on('readline', when='+readline')
+
+    with when('+openssl'):
+        depends_on('openssl@:1')
+        depends_on('openssl@:1.0', when='@:2.3')
 
     # Known build issues when Avira antivirus software is running:
     # https://github.com/rvm/rvm/issues/4313#issuecomment-374020379
@@ -67,7 +69,7 @@ class Ruby(AutotoolsPackage):
         return match.group(1) if match else None
 
     def url_for_version(self, version):
-        url = "http://cache.ruby-lang.org/pub/ruby/{0}/ruby-{1}.tar.gz"
+        url = "https://cache.ruby-lang.org/pub/ruby/{0}/ruby-{1}.tar.gz"
         return url.format(version.up_to(2), version)
 
     def configure_args(self):
@@ -114,7 +116,7 @@ class Ruby(AutotoolsPackage):
         """ RubyGems updated their SSL certificates at some point, so
         new certificates must be installed after Ruby is installed
         in order to download gems; see
-        http://guides.rubygems.org/ssl-certificate-update/
+        https://guides.rubygems.org/ssl-certificate-update/
         for details.
         """
         if self.spec.satisfies("+openssl"):
