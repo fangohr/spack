@@ -83,6 +83,7 @@ class Octopus(Package, CudaPackage):
     depends_on('libyaml', when='+libyaml')
     depends_on('elpa', when='+elpa')
     depends_on('nlopt', when='+nlopt')
+    depends_on('cuda', when='+cuda')
 
     # optional dependencies:
     # TODO: etsf-io, sparskit,
