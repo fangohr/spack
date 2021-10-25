@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 import ruamel.yaml as yaml
 import six
@@ -16,22 +17,27 @@ from ordereddict_backport import OrderedDict
 
 import llnl.util.filesystem as fs
 import llnl.util.tty as tty
-from llnl.util.tty.color import colorize
 
+import spack.bootstrap
+import spack.compilers
 import spack.concretize
 import spack.config
 import spack.error
 import spack.hash_types as ht
 import spack.hooks
+import spack.paths
 import spack.repo
 import spack.schema.env
 import spack.spec
 import spack.stage
 import spack.store
+import spack.subprocess_context
 import spack.user_environment as uenv
+import spack.util.cpus
 import spack.util.environment
 import spack.util.hash
 import spack.util.lock as lk
+import spack.util.parallel
 import spack.util.path
 import spack.util.spack_json as sjson
 import spack.util.spack_yaml as syaml
@@ -108,9 +114,7 @@ def validate_env_name(name):
     return name
 
 
-def activate(
-    env, use_env_repo=False, add_view=True, shell='sh', prompt=None
-):
+def activate(env, use_env_repo=False):
     """Activate an environment.
 
     To activate an environment, we add its configuration scope to the
@@ -121,148 +125,52 @@ def activate(
         env (Environment): the environment to activate
         use_env_repo (bool): use the packages exactly as they appear in the
             environment's repository
-        add_view (bool): generate commands to add view to path variables
-        shell (str): One of `sh`, `csh`, `fish`.
-        prompt (str): string to add to the users prompt, or None
-
-    Returns:
-        str: Shell commands to activate environment.
-
-    TODO: environment to use the activated spack environment.
     """
     global _active_environment
 
-    _active_environment = env
-    prepare_config_scope(_active_environment)
+    # Fail early to avoid ending in an invalid state
+    if not isinstance(env, Environment):
+        raise TypeError("`env` should be of type {0}".format(Environment.__name__))
+
+    # Check if we need to reinitialize the store due to pushing the configuration
+    # below.
+    store_before_pushing = spack.config.get('config:install_tree')
+    prepare_config_scope(env)
+    store_after_pushing = spack.config.get('config:install_tree')
+    if store_before_pushing != store_after_pushing:
+        # Hack to store the state of the store before activation
+        env.store_token = spack.store.reinitialize()
+
     if use_env_repo:
-        spack.repo.path.put_first(_active_environment.repo)
+        spack.repo.path.put_first(env.repo)
 
-    tty.debug("Using environment '%s'" % _active_environment.name)
+    tty.debug("Using environment '%s'" % env.name)
 
-    # Construct the commands to run
-    cmds = ''
-    if shell == 'csh':
-        # TODO: figure out how to make color work for csh
-        cmds += 'setenv SPACK_ENV %s;\n' % env.path
-        cmds += 'alias despacktivate "spack env deactivate";\n'
-        if prompt:
-            cmds += 'if (! $?SPACK_OLD_PROMPT ) '
-            cmds += 'setenv SPACK_OLD_PROMPT "${prompt}";\n'
-            cmds += 'set prompt="%s ${prompt}";\n' % prompt
-    elif shell == 'fish':
-        if os.getenv('TERM') and 'color' in os.getenv('TERM') and prompt:
-            prompt = colorize('@G{%s} ' % prompt, color=True)
-
-        cmds += 'set -gx SPACK_ENV %s;\n' % env.path
-        cmds += 'function despacktivate;\n'
-        cmds += '   spack env deactivate;\n'
-        cmds += 'end;\n'
-        #
-        # NOTE: We're not changing the fish_prompt function (which is fish's
-        # solution to the PS1 variable) here. This is a bit fiddly, and easy to
-        # screw up => spend time reasearching a solution. Feedback welcome.
-        #
-    else:
-        if os.getenv('TERM') and 'color' in os.getenv('TERM') and prompt:
-            prompt = colorize('@G{%s} ' % prompt, color=True)
-
-        cmds += 'export SPACK_ENV=%s;\n' % env.path
-        cmds += "alias despacktivate='spack env deactivate';\n"
-        if prompt:
-            cmds += 'if [ -z ${SPACK_OLD_PS1+x} ]; then\n'
-            cmds += '    if [ -z ${PS1+x} ]; then\n'
-            cmds += "        PS1='$$$$';\n"
-            cmds += '    fi;\n'
-            cmds += '    export SPACK_OLD_PS1="${PS1}";\n'
-            cmds += 'fi;\n'
-            cmds += 'export PS1="%s ${PS1}";\n' % prompt
-
-    #
-    # NOTE in the fish-shell: Path variables are a special kind of variable
-    # used to support colon-delimited path lists including PATH, CDPATH,
-    # MANPATH, PYTHONPATH, etc. All variables that end in PATH (case-sensitive)
-    # become PATH variables.
-    #
-    try:
-        if add_view and default_view_name in env.views:
-            with spack.store.db.read_transaction():
-                cmds += env.add_default_view_to_shell(shell)
-    except (spack.repo.UnknownPackageError,
-            spack.repo.UnknownNamespaceError) as e:
-        tty.error(e)
-        tty.die(
-            'Environment view is broken due to a missing package or repo.\n',
-            '  To activate without views enabled, activate with:\n',
-            '    spack env activate -V {0}\n'.format(env.name),
-            '  To remove it and resolve the issue, '
-            'force concretize with the command:\n',
-            '    spack -e {0} concretize --force'.format(env.name))
-
-    return cmds
+    # Do this last, because setting up the config must succeed first.
+    _active_environment = env
 
 
-def deactivate(shell='sh'):
-    """Undo any configuration or repo settings modified by ``activate()``.
-
-    Arguments:
-        shell (str): One of `sh`, `csh`, `fish`. Shell style to use.
-
-    Returns:
-        str: shell commands for `shell` to undo environment variables
-
-    """
+def deactivate():
+    """Undo any configuration or repo settings modified by ``activate()``."""
     global _active_environment
 
     if not _active_environment:
         return
 
+    # If we attached a store token on activation, restore the previous state
+    # and consume the token
+    if hasattr(_active_environment, 'store_token'):
+        spack.store.restore(_active_environment.store_token)
+        delattr(_active_environment, 'store_token')
     deactivate_config_scope(_active_environment)
 
     # use _repo so we only remove if a repo was actually constructed
     if _active_environment._repo:
         spack.repo.path.remove(_active_environment._repo)
 
-    cmds = ''
-    if shell == 'csh':
-        cmds += 'unsetenv SPACK_ENV;\n'
-        cmds += 'if ( $?SPACK_OLD_PROMPT ) '
-        cmds += 'set prompt="$SPACK_OLD_PROMPT" && '
-        cmds += 'unsetenv SPACK_OLD_PROMPT;\n'
-        cmds += 'unalias despacktivate;\n'
-    elif shell == 'fish':
-        cmds += 'set -e SPACK_ENV;\n'
-        cmds += 'functions -e despacktivate;\n'
-        #
-        # NOTE: Not changing fish_prompt (above) => no need to restore it here.
-        #
-    else:
-        cmds += 'if [ ! -z ${SPACK_ENV+x} ]; then\n'
-        cmds += 'unset SPACK_ENV; export SPACK_ENV;\n'
-        cmds += 'fi;\n'
-        cmds += 'unalias despacktivate;\n'
-        cmds += 'if [ ! -z ${SPACK_OLD_PS1+x} ]; then\n'
-        cmds += '    if [ "$SPACK_OLD_PS1" = \'$$$$\' ]; then\n'
-        cmds += '        unset PS1; export PS1;\n'
-        cmds += '    else\n'
-        cmds += '        export PS1="$SPACK_OLD_PS1";\n'
-        cmds += '    fi;\n'
-        cmds += '    unset SPACK_OLD_PS1; export SPACK_OLD_PS1;\n'
-        cmds += 'fi;\n'
-
-    try:
-        if default_view_name in _active_environment.views:
-            with spack.store.db.read_transaction():
-                cmds += _active_environment.rm_default_view_from_shell(shell)
-    except (spack.repo.UnknownPackageError,
-            spack.repo.UnknownNamespaceError) as e:
-        tty.warn(e)
-        tty.warn('Could not fully deactivate view due to missing package '
-                 'or repo, shell environment may be corrupt.')
-
     tty.debug("Deactivated environment '%s'" % _active_environment.name)
-    _active_environment = None
 
-    return cmds
+    _active_environment = None
 
 
 def active_environment():
@@ -1209,14 +1117,62 @@ class Environment(object):
                 self._add_concrete_spec(s, concrete, new=False)
 
         # Concretize any new user specs that we haven't concretized yet
-        concretized_specs = []
+        arguments, root_specs = [], []
         for uspec, uspec_constraints in zip(
-                self.user_specs, self.user_specs.specs_as_constraints):
+                self.user_specs, self.user_specs.specs_as_constraints
+        ):
             if uspec not in old_concretized_user_specs:
-                concrete = _concretize_from_constraints(uspec_constraints, tests=tests)
-                self._add_concrete_spec(uspec, concrete)
-                concretized_specs.append((uspec, concrete))
-        return concretized_specs
+                root_specs.append(uspec)
+                arguments.append((uspec_constraints, tests))
+
+        # Ensure we don't try to bootstrap clingo in parallel
+        if spack.config.get('config:concretizer') == 'clingo':
+            with spack.bootstrap.ensure_bootstrap_configuration():
+                spack.bootstrap.ensure_clingo_importable_or_raise()
+
+        # Ensure all the indexes have been built or updated, since
+        # otherwise the processes in the pool may timeout on waiting
+        # for a write lock. We do this indirectly by retrieving the
+        # provider index, which should in turn trigger the update of
+        # all the indexes if there's any need for that.
+        _ = spack.repo.path.provider_index
+
+        # Ensure we have compilers in compilers.yaml to avoid that
+        # processes try to write the config file in parallel
+        _ = spack.compilers.get_compiler_config()
+
+        # Early return if there is nothing to do
+        if len(arguments) == 0:
+            return []
+
+        # Solve the environment in parallel on Linux
+        start = time.time()
+        max_processes = min(
+            len(arguments),  # Number of specs
+            16  # Cap on 16 cores
+        )
+
+        # TODO: revisit this print as soon as darwin is parallel too
+        msg = 'Starting concretization'
+        if sys.platform != 'darwin':
+            pool_size = spack.util.parallel.num_processes(max_processes=max_processes)
+            if pool_size > 1:
+                msg = msg + ' pool with {0} processes'.format(pool_size)
+        tty.msg(msg)
+
+        concretized_root_specs = spack.util.parallel.parallel_map(
+            _concretize_task, arguments, max_processes=max_processes,
+            debug=tty.is_debug()
+        )
+
+        finish = time.time()
+        tty.msg('Environment concretized in %.2f seconds.' % (finish - start))
+        results = []
+        for abstract, concrete in zip(root_specs, concretized_root_specs):
+            self._add_concrete_spec(abstract, concrete)
+            results.append((abstract, concrete))
+
+        return results
 
     def concretize_and_add(self, user_spec, concrete_spec=None, tests=False):
         """Concretize and add a single spec to the environment.
@@ -1345,12 +1301,18 @@ class Environment(object):
 
         return all_mods, errors
 
-    def add_default_view_to_shell(self, shell):
-        env_mod = spack.util.environment.EnvironmentModifications()
+    def add_default_view_to_env(self, env_mod):
+        """
+        Collect the environment modifications to activate an environment using the
+        default view. Removes duplicate paths.
 
+        Args:
+            env_mod (spack.util.environment.EnvironmentModifications): the environment
+                modifications object that is modified.
+        """
         if default_view_name not in self.views:
             # No default view to add to shell
-            return env_mod.shell_modifications(shell)
+            return env_mod
 
         env_mod.extend(uenv.unconditional_environment_modifications(
             self.default_view))
@@ -1365,14 +1327,20 @@ class Environment(object):
         for env_var in env_mod.group_by_name():
             env_mod.prune_duplicate_paths(env_var)
 
-        return env_mod.shell_modifications(shell)
+        return env_mod
 
-    def rm_default_view_from_shell(self, shell):
-        env_mod = spack.util.environment.EnvironmentModifications()
+    def rm_default_view_from_env(self, env_mod):
+        """
+        Collect the environment modifications to deactivate an environment using the
+        default view. Reverses the action of ``add_default_view_to_env``.
 
+        Args:
+            env_mod (spack.util.environment.EnvironmentModifications): the environment
+                modifications object that is modified.
+        """
         if default_view_name not in self.views:
             # No default view to add to shell
-            return env_mod.shell_modifications(shell)
+            return env_mod
 
         env_mod.extend(uenv.unconditional_environment_modifications(
             self.default_view).reversed())
@@ -1380,7 +1348,7 @@ class Environment(object):
         mods, _ = self._env_modifications_for_default_view(reverse=True)
         env_mod.extend(mods)
 
-        return env_mod.shell_modifications(shell)
+        return env_mod
 
     def _add_concrete_spec(self, spec, concrete, new=True):
         """Called when a new concretized spec is added to the environment.
@@ -1944,7 +1912,7 @@ class Environment(object):
         written = os.path.exists(self.manifest_path)
         if changed or not written:
             self.raw_yaml = copy.deepcopy(self.yaml)
-            with fs.write_tmp_and_move(self.manifest_path) as f:
+            with fs.write_tmp_and_move(os.path.realpath(self.manifest_path)) as f:
                 _write_yaml(self.yaml, f)
 
     def __enter__(self):
@@ -2046,6 +2014,12 @@ def _concretize_from_constraints(spec_constraints, tests=False):
             if len(inv_variant_constraints) != len(invalid_variants):
                 raise e
             invalid_constraints.extend(inv_variant_constraints)
+
+
+def _concretize_task(packed_arguments):
+    spec_constraints, tests = packed_arguments
+    with tty.SuppressOutput(msg_enabled=False):
+        return _concretize_from_constraints(spec_constraints, tests)
 
 
 def make_repo_path(root):
@@ -2165,14 +2139,17 @@ def is_latest_format(manifest):
 
 
 @contextlib.contextmanager
-def deactivate_environment():
-    """Deactivate an active environment for the duration of the context."""
-    global _active_environment
-    current, _active_environment = _active_environment, None
+def no_active_environment():
+    """Deactivate the active environment for the duration of the context. Has no
+       effect when there is no active environment."""
+    env = active_environment()
     try:
+        deactivate()
         yield
     finally:
-        _active_environment = current
+        # TODO: we don't handle `use_env_repo` here.
+        if env:
+            activate(env)
 
 
 class SpackEnvironmentError(spack.error.SpackError):

@@ -19,7 +19,6 @@ from llnl.util.tty.color import colorize
 
 import spack.config
 import spack.projections
-import spack.relocate
 import spack.schema.projections
 import spack.spec
 import spack.store
@@ -73,6 +72,9 @@ def view_copy(src, dst, view, spec=None):
         # will have the old sbang location in their shebangs.
         # TODO: Not sure which one to use...
         import spack.hooks.sbang as sbang
+
+        # Break a package include cycle
+        import spack.relocate
 
         orig_sbang = '#!/bin/bash {0}/bin/sbang'.format(spack.paths.spack_root)
         new_sbang = sbang.sbang_shebang_line()
@@ -406,7 +408,7 @@ class YamlFilesystemView(FilesystemView):
 
         ignore = ignore or (lambda f: False)
         ignore_file = match_predicate(
-            self.layout.hidden_file_paths, ignore)
+            self.layout.hidden_file_regexes, ignore)
 
         # check for dir conflicts
         conflicts = tree.find_dir_conflicts(view_dst, ignore_file)
@@ -432,7 +434,7 @@ class YamlFilesystemView(FilesystemView):
 
         ignore = ignore or (lambda f: False)
         ignore_file = match_predicate(
-            self.layout.hidden_file_paths, ignore)
+            self.layout.hidden_file_regexes, ignore)
 
         merge_map = tree.get_file_map(view_dst, ignore_file)
         pkg.remove_files_from_view(self, merge_map)
