@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+import glob
 import os
 import shutil
 import sys
@@ -68,7 +69,8 @@ def create_build_task(pkg, install_args={}):
     Create a built task for the given (concretized) package
 
     Args:
-        pkg (spack.package.PackageBase): concretized package associated with the task
+        pkg (spack.package_base.PackageBase): concretized package associated with
+                                              the task
         install_args (dict): dictionary of kwargs (or install args)
 
     Return:
@@ -214,7 +216,7 @@ def test_process_binary_cache_tarball_none(install_mockery, monkeypatch,
 
 def test_process_binary_cache_tarball_tar(install_mockery, monkeypatch, capfd):
     """Tests of _process_binary_cache_tarball with a tar file."""
-    def _spec(spec, preferred_mirrors=None):
+    def _spec(spec, unsigned=False, mirrors_for_spec=None):
         return spec
 
     # Skip binary distribution functionality since assume tested elsewhere
@@ -715,7 +717,7 @@ def test_install_task_add_compiler(install_mockery, monkeypatch, capfd):
     task.compiler = True
 
     # Preclude any meaningful side-effects
-    monkeypatch.setattr(spack.package.PackageBase, 'unit_test_check', _true)
+    monkeypatch.setattr(spack.package_base.PackageBase, 'unit_test_check', _true)
     monkeypatch.setattr(inst.PackageInstaller, '_setup_install_dir', _noop)
     monkeypatch.setattr(spack.build_environment, 'start_build_process', _noop)
     monkeypatch.setattr(spack.database.Database, 'add', _noop)
@@ -819,7 +821,7 @@ def test_setup_install_dir_grp(install_mockery, monkeypatch, capfd):
     def _get_group(spec):
         return mock_group
 
-    def _chgrp(path, group):
+    def _chgrp(path, group, follow_symlinks=True):
         tty.msg(mock_chgrp_msg.format(path, group))
 
     monkeypatch.setattr(prefs, 'get_package_group', _get_group)
@@ -1048,7 +1050,7 @@ def test_install_fail_fast_on_except(install_mockery, monkeypatch, capsys):
     # This will prevent b from installing, which will cause the build of a
     # to be skipped.
     monkeypatch.setattr(
-        spack.package.PackageBase,
+        spack.package_base.PackageBase,
         'do_patch',
         _test_install_fail_fast_on_except_patch
     )
@@ -1175,9 +1177,6 @@ def test_overwrite_install_backup_success(temporary_store, config, mock_packages
     When doing an overwrite install that fails, Spack should restore the backup
     of the original prefix, and leave the original spec marked installed.
     """
-    # Where to store the backups
-    backup = str(tmpdir.mkdir("backup"))
-
     # Get a build task. TODO: refactor this to avoid calling internal methods
     const_arg = installer_args(["b"])
     installer = create_installer(const_arg)
@@ -1202,8 +1201,7 @@ def test_overwrite_install_backup_success(temporary_store, config, mock_packages
 
     fake_installer = InstallerThatWipesThePrefixDir()
     fake_db = FakeDatabase()
-    overwrite_install = inst.OverwriteInstall(
-        fake_installer, fake_db, task, tmp_root=backup)
+    overwrite_install = inst.OverwriteInstall(fake_installer, fake_db, task)
 
     # Installation should throw the installation exception, not the backup
     # failure.
@@ -1223,13 +1221,16 @@ def test_overwrite_install_backup_failure(temporary_store, config, mock_packages
     original prefix. If that fails, the spec is lost, and it should be removed
     from the database.
     """
-    # Where to store the backups
-    backup = str(tmpdir.mkdir("backup"))
-
     class InstallerThatAccidentallyDeletesTheBackupDir:
         def _install_task(self, task):
-            # Remove the backup directory so that restoring goes terribly wrong
-            shutil.rmtree(backup)
+            # Remove the backup directory, which is at the same level as the prefix,
+            # starting with .backup
+            backup_glob = os.path.join(
+                os.path.dirname(os.path.normpath(task.pkg.prefix)),
+                '.backup*'
+            )
+            for backup in glob.iglob(backup_glob):
+                shutil.rmtree(backup)
             raise Exception("Some fatal install error")
 
     class FakeDatabase:
@@ -1250,8 +1251,7 @@ def test_overwrite_install_backup_failure(temporary_store, config, mock_packages
 
     fake_installer = InstallerThatAccidentallyDeletesTheBackupDir()
     fake_db = FakeDatabase()
-    overwrite_install = inst.OverwriteInstall(
-        fake_installer, fake_db, task, tmp_root=backup)
+    overwrite_install = inst.OverwriteInstall(fake_installer, fake_db, task)
 
     # Installation should throw the installation exception, not the backup
     # failure.

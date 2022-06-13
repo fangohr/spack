@@ -3,7 +3,11 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-from spack import *
+import os
+
+import llnl.util.tty as tty
+
+from spack.package import *
 
 
 class Hiop(CMakePackage, CudaPackage, ROCmPackage):
@@ -15,9 +19,10 @@ class Hiop(CMakePackage, CudaPackage, ROCmPackage):
 
     homepage = 'https://github.com/LLNL/hiop'
     git = 'https://github.com/LLNL/hiop.git'
-    maintainers = ['ashermancinelli', 'CameronRutherford']
+    maintainers = ['ashermancinelli', 'CameronRutherford', 'pelesh']
 
     # Most recent tagged snapshot is the preferred version when profiling.
+    version('0.6.2', commit='55652fbe923ab9107d002d0d070865bd22375b28')
     version('0.6.1', commit='a9e2697b00aa13ecf0ae4783dd8a41dee11dc50e')
     version('0.6.0', commit='21af7eb0d6427be73546cf303abc84e834a5a55d')
     version('0.5.4', commit='a37a7a677884e95d1c0ad37936aef3778fc91c3e')
@@ -71,6 +76,7 @@ class Hiop(CMakePackage, CudaPackage, ROCmPackage):
         cuda_dep = "+cuda cuda_arch={0}".format(arch)
         depends_on("magma {0}".format(cuda_dep), when=cuda_dep)
         depends_on("raja {0}".format(cuda_dep), when="+raja {0}".format(cuda_dep))
+        depends_on("ginkgo {0}".format(cuda_dep), when="+ginkgo {0}".format(cuda_dep))
         depends_on("umpire ~shared {0}".format(cuda_dep), when="+raja {0}".format(cuda_dep))
 
     for arch in ROCmPackage.amdgpu_targets:
@@ -204,3 +210,36 @@ class Hiop(CMakePackage, CudaPackage, ROCmPackage):
             args.append(self.define('HIOP_COINHSL_DIR', spec['coinhsl'].prefix))
 
         return args
+
+    # If testing on a cluster without access to home directory in a job, you may
+    # set the following environment variables to prevent related errors:
+    #
+    # export SPACK_USER_CACHE_PATH=/tmp/spack
+    # export SPACK_DISABLE_LOCAL_CONFIG=true
+    def test(self):
+        if not self.spec.satisfies('@develop') or \
+                not os.path.isdir(self.prefix.bin):
+            tty.info('Skipping: checks not installed in bin for v{0}'.
+                     format(self.version))
+            return
+
+        tests = [
+            ['NlpMdsEx1.exe', '400', '100', '0', '-selfcheck'],
+            ['NlpMdsEx1.exe', '400', '100', '1', '-selfcheck'],
+            ['NlpMdsEx1.exe', '400', '100', '0', '-empty_sp_row', '-selfcheck'],
+        ]
+
+        if '+raja' in self.spec:
+            tests.extend([
+                ['NlpMdsEx1Raja.exe', '400', '100', '0', '-selfcheck'],
+                ['NlpMdsEx1Raja.exe', '400', '100', '1', '-selfcheck'],
+                ['NlpMdsEx1Raja.exe', '400', '100', '0', '-empty_sp_row', '-selfcheck'],
+            ])
+
+        for i, test in enumerate(tests):
+            exe = os.path.join(self.prefix.bin, test[0])
+            args = test[1:]
+            reason = 'test {0}: "{1}"'.format(i, ' '.join(test))
+            self.run_test(exe, args, [], 0, installed=False,
+                          purpose=reason, skip_missing=True,
+                          work_dir=self.prefix.bin)
