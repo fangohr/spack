@@ -25,6 +25,9 @@ class EtsfIo(Package):
     depends_on("netcdf-fortran")
     depends_on("hdf5+mpi~cxx", when='+mpi')  # required for NetCDF-4 support
 
+    patch("tests_module.patch")
+    patch("tests_init.patch")
+
     def install(self, spec, prefix):
         options = ['--prefix=%s' % prefix]
         oapp = options.append
