@@ -47,6 +47,8 @@ class Octopus(Package, CudaPackage):
             description='Compile with ARPACK')
     variant('cgal', default=False,
             description='Compile with CGAL library support')
+    variant('etsf-io', default=False,
+            description='Compile with ETSF-IO library support')
     variant('pfft', default=False,
             description='Compile with PFFT')
     # poke here refers to https://gitlab.e-cam2020.eu/esl/poke
@@ -91,6 +93,7 @@ class Octopus(Package, CudaPackage):
     depends_on('netcdf-fortran', when='+netcdf')
     depends_on('arpack-ng', when='+arpack')
     depends_on('cgal', when='+cgal')
+    depends_on('etsf-io', when='+etsf-io')
     depends_on('pfft', when='+pfft')
     depends_on('likwid', when='+likwid')
     depends_on('libvdwxc', when='+libvdwxc')
@@ -168,6 +171,11 @@ class Octopus(Package, CudaPackage):
         if '+cgal' in spec:
             args.append(
                 '--with-cgal-prefix=%s' % spec['cgal'].prefix
+            )
+
+        if '+etsf-io' in spec:
+            args.append(
+                '--with-etsf-io-prefix=%s' % spec['etsf-io'].prefix
             )
 
         if '+likwid' in spec:
